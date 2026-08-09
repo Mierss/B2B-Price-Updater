@@ -7,9 +7,10 @@ Standalone live updater.
 - Reads Shopify variants
 - Reads B2B pricing rules from b2b_settings.json
 - Finds the configured Shopify native B2B catalog
-- Reads existing fixed B2B prices
-- Calculates the required B2B price
-- Updates ONLY changed/new fixed prices
+- Reads existing B2B fixed price + compare-at price
+- Calculates required B2B price
+- Sets compare-at price to current Shopify retail price
+- Updates when EITHER price or compare-at price differs
 - Generates audit CSV + JSON summary
 """
 
@@ -26,9 +27,9 @@ from pathlib import Path
 import requests
 
 
-# ---------------------------------------------------------
+# =========================================================
 # BASIC SETTINGS
-# ---------------------------------------------------------
+# =========================================================
 
 API_VERSION = os.getenv(
     "SHOPIFY_API_VERSION",
@@ -58,18 +59,22 @@ D = Decimal
 
 PRICE_TOLERANCE = D("0.05")
 
-# Keep writes in manageable groups.
 BATCH_SIZE = 200
 
 
-# ---------------------------------------------------------
+# =========================================================
 # HELPERS
-# ---------------------------------------------------------
+# =========================================================
 
 def required_env(name: str) -> str:
-    value = os.getenv(name, "").strip()
+
+    value = os.getenv(
+        name,
+        "",
+    ).strip()
 
     if not value:
+
         raise RuntimeError(
             f"Missing required environment variable: {name}"
         )
@@ -77,44 +82,68 @@ def required_env(name: str) -> str:
     return value
 
 
-def dec(value, default=None):
+def dec(
+    value,
+    default=None,
+):
+
     if value is None:
         return default
 
-    text = str(value).strip()
+    text = str(
+        value
+    ).strip()
 
     if not text:
         return default
 
     try:
+
         return D(
-            text.replace(",", "")
+            text.replace(
+                ",",
+                "",
+            )
         )
+
     except InvalidOperation:
+
         return default
 
 
-def normalize(value: str) -> str:
+def normalize(
+    value: str,
+) -> str:
+
     return (
         value or ""
     ).strip().lower()
 
 
-def round_1(value: D) -> D:
+def round_1(
+    value: D,
+) -> D:
+
     return value.quantize(
         D("0.1"),
         rounding=ROUND_HALF_UP,
     )
 
 
-def money(value) -> str:
+def money(
+    value,
+) -> str:
+
     if value is None:
         return ""
 
     return f"{value:.2f}"
 
 
-def pct(value) -> str:
+def pct(
+    value,
+) -> str:
+
     if value is None:
         return ""
 
@@ -123,23 +152,56 @@ def pct(value) -> str:
     )
 
 
-def chunked(items, size):
+def chunked(
+    items,
+    size,
+):
+
     for index in range(
         0,
         len(items),
         size,
     ):
+
         yield items[
             index:index + size
         ]
 
 
-# ---------------------------------------------------------
+def values_match(
+    current: D | None,
+    expected: D | None,
+) -> bool:
+
+    if (
+        current is None
+        and expected is None
+    ):
+        return True
+
+    if (
+        current is None
+        or expected is None
+    ):
+        return False
+
+    return (
+        abs(
+            current
+            - expected
+        )
+        <= PRICE_TOLERANCE
+    )
+
+
+# =========================================================
 # LOAD SETTINGS
-# ---------------------------------------------------------
+# =========================================================
 
 def load_settings():
+
     if not SETTINGS_PATH.exists():
+
         raise RuntimeError(
             f"B2B settings file not found: "
             f"{SETTINGS_PATH}"
@@ -161,7 +223,9 @@ def load_settings():
     ]
 
     for section in required_sections:
+
         if section not in settings:
+
             raise RuntimeError(
                 f"Missing B2B settings section: "
                 f"{section}"
@@ -172,9 +236,13 @@ def load_settings():
 
 SETTINGS = load_settings()
 
+
 CATALOG_TITLE = (
-    SETTINGS["catalog_title"]
+    SETTINGS[
+        "catalog_title"
+    ]
 )
+
 
 NORMAL_FREIGHT_PER_KG = D(
     str(
@@ -186,6 +254,7 @@ NORMAL_FREIGHT_PER_KG = D(
     )
 )
 
+
 HOLLEY_DIRECT_FREIGHT_PER_KG = D(
     str(
         SETTINGS[
@@ -196,14 +265,23 @@ HOLLEY_DIRECT_FREIGHT_PER_KG = D(
     )
 )
 
+
 BRAND_DISCOUNTS = {
-    normalize(brand):
-        D(str(discount))
+
+    normalize(
+        brand
+    ): D(
+        str(
+            discount
+        )
+    )
+
     for brand, discount
     in SETTINGS[
         "brand_discounts"
     ].items()
 }
+
 
 LINK_ECU_STRADA_AIM_DISCOUNT = D(
     str(
@@ -215,10 +293,13 @@ LINK_ECU_STRADA_AIM_DISCOUNT = D(
     )
 )
 
+
 FALLBACK_DISCOUNTS = sorted(
+
     SETTINGS[
         "fallback_discounts"
     ],
+
     key=lambda row: D(
         str(
             row[
@@ -226,13 +307,14 @@ FALLBACK_DISCOUNTS = sorted(
             ]
         )
     ),
+
     reverse=True,
 )
 
 
-# ---------------------------------------------------------
+# =========================================================
 # SHOPIFY AUTH
-# ---------------------------------------------------------
+# =========================================================
 
 def get_shopify_token(
     store: str,
@@ -250,8 +332,10 @@ def get_shopify_token(
         data={
             "grant_type":
                 "client_credentials",
+
             "client_id":
                 client_id,
+
             "client_secret":
                 client_secret,
         },
@@ -271,6 +355,7 @@ def get_shopify_token(
     )
 
     if not token:
+
         raise RuntimeError(
             "Shopify token response "
             "did not include access_token"
@@ -283,9 +368,9 @@ def get_shopify_token(
     return token
 
 
-# ---------------------------------------------------------
+# =========================================================
 # GRAPHQL
-# ---------------------------------------------------------
+# =========================================================
 
 def graphql(
     store: str,
@@ -308,12 +393,14 @@ def graphql(
             headers={
                 "Content-Type":
                     "application/json",
+
                 "X-Shopify-Access-Token":
                     token,
             },
             json={
                 "query":
                     query,
+
                 "variables":
                     variables,
             },
@@ -341,7 +428,9 @@ def graphql(
                 f"retrying in {wait}s..."
             )
 
-            time.sleep(wait)
+            time.sleep(
+                wait
+            )
 
             continue
 
@@ -350,13 +439,16 @@ def graphql(
         payload = response.json()
 
         errors = (
-            payload.get("errors")
+            payload.get(
+                "errors"
+            )
             or []
         )
 
         if errors:
 
             throttled = any(
+
                 (
                     error.get(
                         "extensions"
@@ -366,18 +458,21 @@ def graphql(
                     "code"
                 )
                 == "THROTTLED"
-                for error in errors
+
+                for error
+                in errors
             )
 
             if throttled:
 
                 print(
-                    "Shopify GraphQL "
-                    "throttled; "
+                    "Shopify GraphQL throttled; "
                     "retrying in 5s..."
                 )
 
-                time.sleep(5)
+                time.sleep(
+                    5
+                )
 
                 continue
 
@@ -391,9 +486,9 @@ def graphql(
         return payload
 
 
-# ---------------------------------------------------------
+# =========================================================
 # READ SHOPIFY VARIANTS
-# ---------------------------------------------------------
+# =========================================================
 
 def fetch_shopify_variants(
     store: str,
@@ -451,6 +546,7 @@ def fetch_shopify_variants(
     variants = []
 
     after = None
+
     page = 0
 
     print(
@@ -466,6 +562,7 @@ def fetch_shopify_variants(
             {
                 "first":
                     250,
+
                 "after":
                     after,
             },
@@ -506,6 +603,7 @@ def fetch_shopify_variants(
         ][
             "hasNextPage"
         ]:
+
             break
 
         after = connection[
@@ -517,9 +615,9 @@ def fetch_shopify_variants(
     return variants
 
 
-# ---------------------------------------------------------
-# FIND PRICE LIST
-# ---------------------------------------------------------
+# =========================================================
+# FIND B2B PRICE LIST
+# =========================================================
 
 def find_b2b_price_list(
     store: str,
@@ -545,13 +643,6 @@ def find_b2b_price_list(
             id
             title
           }
-
-          parent {
-            adjustment {
-              type
-              value
-            }
-          }
         }
 
         pageInfo {
@@ -567,6 +658,7 @@ def find_b2b_price_list(
     matches = []
 
     print()
+
     print(
         f'Looking for Shopify catalog '
         f'"{CATALOG_TITLE}"...'
@@ -581,6 +673,7 @@ def find_b2b_price_list(
             {
                 "first":
                     100,
+
                 "after":
                     after,
             },
@@ -623,6 +716,7 @@ def find_b2b_price_list(
         ][
             "hasNextPage"
         ]:
+
             break
 
         after = connection[
@@ -639,7 +733,9 @@ def find_b2b_price_list(
             f'"{CATALOG_TITLE}".'
         )
 
-    if len(matches) > 1:
+    if len(
+        matches
+    ) > 1:
 
         raise RuntimeError(
             f'Found {len(matches)} '
@@ -647,7 +743,11 @@ def find_b2b_price_list(
             f'"{CATALOG_TITLE}".'
         )
 
-    price_list = matches[0]
+    price_list = (
+        matches[
+            0
+        ]
+    )
 
     catalog = (
         price_list.get(
@@ -683,9 +783,9 @@ def find_b2b_price_list(
     return price_list
 
 
-# ---------------------------------------------------------
-# READ CURRENT PRICE LIST PRICES
-# ---------------------------------------------------------
+# =========================================================
+# READ CURRENT B2B PRICES + COMPARE-AT
+# =========================================================
 
 def fetch_price_list_prices(
     store: str,
@@ -714,6 +814,11 @@ def fetch_price_list_prices(
               currencyCode
             }
 
+            compareAtPrice {
+              amount
+              currencyCode
+            }
+
             variant {
               id
             }
@@ -735,8 +840,10 @@ def fetch_price_list_prices(
     page = 0
 
     print()
+
     print(
-        "Reading current B2B prices..."
+        "Reading current B2B prices "
+        "and compare-at prices..."
     )
 
     while True:
@@ -748,8 +855,10 @@ def fetch_price_list_prices(
             {
                 "id":
                     price_list_id,
+
                 "first":
                     250,
+
                 "after":
                     after,
             },
@@ -764,6 +873,7 @@ def fetch_price_list_prices(
         )
 
         if not price_list:
+
             raise RuntimeError(
                 "Price list not found"
             )
@@ -793,7 +903,7 @@ def fetch_price_list_prices(
                 )
             )
 
-            amount = dec(
+            current_price = dec(
                 (
                     node.get(
                         "price"
@@ -804,17 +914,29 @@ def fetch_price_list_prices(
                 )
             )
 
-            if (
-                variant_id
-                and amount
-                is not None
-            ):
+            current_compare_at = dec(
+                (
+                    node.get(
+                        "compareAtPrice"
+                    )
+                    or {}
+                ).get(
+                    "amount"
+                )
+            )
+
+            if variant_id:
 
                 prices[
                     variant_id
                 ] = {
+
                     "price":
-                        amount,
+                        current_price,
+
+                    "compare_at_price":
+                        current_compare_at,
+
                     "origin_type":
                         (
                             node.get(
@@ -845,6 +967,7 @@ def fetch_price_list_prices(
         ][
             "hasNextPage"
         ]:
+
             break
 
         after = connection[
@@ -856,9 +979,9 @@ def fetch_price_list_prices(
     return prices
 
 
-# ---------------------------------------------------------
+# =========================================================
 # BRAND / FALLBACK DISCOUNT
-# ---------------------------------------------------------
+# =========================================================
 
 def calculate_discount_price(
     retail_price: D,
@@ -873,6 +996,10 @@ def calculate_discount_price(
     handle_key = normalize(
         handle
     )
+
+    # -----------------------------------------------------
+    # Link ECU special exception
+    # -----------------------------------------------------
 
     if (
         vendor_key
@@ -893,6 +1020,10 @@ def calculate_discount_price(
             "LINK ECU STRADA/AIM"
         )
 
+    # -----------------------------------------------------
+    # Brand override
+    # -----------------------------------------------------
+
     elif (
         vendor_key
         in BRAND_DISCOUNTS
@@ -907,6 +1038,10 @@ def calculate_discount_price(
         rule = (
             f"BRAND: {vendor}"
         )
+
+    # -----------------------------------------------------
+    # Fallback discount
+    # -----------------------------------------------------
 
     else:
 
@@ -949,9 +1084,9 @@ def calculate_discount_price(
                 break
 
         if discount is None:
+
             raise RuntimeError(
-                "No fallback "
-                "discount matched"
+                "No fallback discount matched"
             )
 
     discount_price = round_1(
@@ -969,9 +1104,9 @@ def calculate_discount_price(
     )
 
 
-# ---------------------------------------------------------
+# =========================================================
 # MARGIN FLOOR
-# ---------------------------------------------------------
+# =========================================================
 
 def get_margin_floor(
     landed_cost: D,
@@ -1001,7 +1136,9 @@ def get_margin_floor(
             max_cost is None
             or landed_cost
             <= D(
-                str(max_cost)
+                str(
+                    max_cost
+                )
             )
         ):
 
@@ -1012,9 +1149,9 @@ def get_margin_floor(
     )
 
 
-# ---------------------------------------------------------
+# =========================================================
 # CALCULATE B2B PRICE
-# ---------------------------------------------------------
+# =========================================================
 
 def calculate_b2b_price(
     variant: dict,
@@ -1052,6 +1189,7 @@ def calculate_b2b_price(
         return {
             "status":
                 "SKIPPED",
+
             "reason":
                 "MISSING_SKU",
         }
@@ -1064,6 +1202,7 @@ def calculate_b2b_price(
         return {
             "status":
                 "SKIPPED",
+
             "reason":
                 "INVALID_RETAIL_PRICE",
         }
@@ -1136,8 +1275,11 @@ def calculate_b2b_price(
     )
 
     tag_keys = {
-        normalize(tag)
-        for tag in tags
+        normalize(
+            tag
+        )
+        for tag
+        in tags
     }
 
     holley_direct = (
@@ -1151,8 +1293,9 @@ def calculate_b2b_price(
         else NORMAL_FREIGHT_PER_KG
     )
 
-    # No cost:
-    # discount-only price.
+    # -----------------------------------------------------
+    # NO COST
+    # -----------------------------------------------------
 
     if cost is None:
 
@@ -1164,6 +1307,7 @@ def calculate_b2b_price(
         )
 
         return {
+
             "status":
                 "CALCULATED",
 
@@ -1208,9 +1352,16 @@ def calculate_b2b_price(
             "b2b_price":
                 b2b_price,
 
+            "compare_at_price":
+                retail_price,
+
             "note":
                 "NO_COST - DISCOUNT_ONLY",
         }
+
+    # -----------------------------------------------------
+    # FREIGHT
+    # -----------------------------------------------------
 
     if weight_kg is None:
 
@@ -1235,6 +1386,10 @@ def calculate_b2b_price(
         + freight
     )
 
+    # -----------------------------------------------------
+    # MARGIN FLOOR
+    # -----------------------------------------------------
+
     margin_floor_pct = (
         get_margin_floor(
             landed_cost
@@ -1249,6 +1404,10 @@ def calculate_b2b_price(
         )
     )
 
+    # -----------------------------------------------------
+    # FINAL B2B PRICE
+    # -----------------------------------------------------
+
     b2b_price = round_1(
         min(
             retail_price,
@@ -1260,6 +1419,7 @@ def calculate_b2b_price(
     )
 
     return {
+
         "status":
             "CALCULATED",
 
@@ -1304,14 +1464,19 @@ def calculate_b2b_price(
         "b2b_price":
             b2b_price,
 
+        # B2B compare-at should always
+        # equal current Shopify retail
+        "compare_at_price":
+            retail_price,
+
         "note":
             note,
     }
 
 
-# ---------------------------------------------------------
-# WRITE FIXED PRICES
-# ---------------------------------------------------------
+# =========================================================
+# WRITE FIXED PRICE + COMPARE-AT PRICE
+# =========================================================
 
 def update_fixed_prices(
     store: str,
@@ -1331,11 +1496,17 @@ def update_fixed_prices(
         prices: $prices
       ) {
         prices {
+
           variant {
             id
           }
 
           price {
+            amount
+            currencyCode
+          }
+
+          compareAtPrice {
             amount
             currencyCode
           }
@@ -1355,16 +1526,31 @@ def update_fixed_prices(
     for row in rows:
 
         prices.append({
+
             "variantId":
                 row[
                     "variant_id"
                 ],
 
             "price": {
+
                 "amount":
                     str(
                         row[
                             "new_b2b_price"
+                        ]
+                    ),
+
+                "currencyCode":
+                    currency,
+            },
+
+            "compareAtPrice": {
+
+                "amount":
+                    str(
+                        row[
+                            "new_compare_at_price"
                         ]
                     ),
 
@@ -1418,9 +1604,9 @@ def update_fixed_prices(
     )
 
 
-# ---------------------------------------------------------
+# =========================================================
 # MAIN
-# ---------------------------------------------------------
+# =========================================================
 
 def main():
 
@@ -1500,6 +1686,17 @@ def main():
 
     unchanged = 0
 
+    price_changes = 0
+
+    compare_at_changes = 0
+
+    both_changes = 0
+
+
+    # =====================================================
+    # COMPARE EVERYTHING
+    # =====================================================
+
     for variant in variants:
 
         result = (
@@ -1516,6 +1713,7 @@ def main():
         ):
 
             skipped.append({
+
                 "sku":
                     (
                         variant.get(
@@ -1538,11 +1736,13 @@ def main():
 
             continue
 
+
         variant_id = (
             result[
                 "variant_id"
             ]
         )
+
 
         current = (
             existing_prices.get(
@@ -1550,49 +1750,142 @@ def main():
             )
         )
 
+
         current_price = (
+
             current.get(
                 "price"
             )
+
             if current
+
             else None
         )
 
+
+        current_compare_at = (
+
+            current.get(
+                "compare_at_price"
+            )
+
+            if current
+
+            else None
+        )
+
+
         current_origin = (
+
             current.get(
                 "origin_type"
             )
+
             if current
+
             else "NONE"
         )
 
-        calculated_price = (
+
+        new_price = (
             result[
                 "b2b_price"
             ]
         )
 
-        if (
-            current_price
-            is not None
-            and abs(
-                calculated_price
-                - current_price
+
+        new_compare_at = (
+            result[
+                "compare_at_price"
+            ]
+        )
+
+
+        price_matches = (
+            values_match(
+                current_price,
+                new_price,
             )
-            <= PRICE_TOLERANCE
+        )
+
+
+        compare_at_matches = (
+            values_match(
+                current_compare_at,
+                new_compare_at,
+            )
+        )
+
+
+        # -------------------------------------------------
+        # COMPLETELY CORRECT
+        # -------------------------------------------------
+
+        if (
+            price_matches
+            and compare_at_matches
         ):
 
             unchanged += 1
 
             continue
 
-        difference = (
-            calculated_price
+
+        # -------------------------------------------------
+        # WHY ARE WE UPDATING?
+        # -------------------------------------------------
+
+        if (
+            not price_matches
+            and not compare_at_matches
+        ):
+
+            update_reason = (
+                "PRICE_AND_COMPARE_AT"
+            )
+
+            both_changes += 1
+
+        elif not price_matches:
+
+            update_reason = (
+                "PRICE"
+            )
+
+            price_changes += 1
+
+        else:
+
+            update_reason = (
+                "COMPARE_AT"
+            )
+
+            compare_at_changes += 1
+
+
+        price_difference = (
+
+            new_price
             - current_price
+
             if current_price
             is not None
+
             else None
         )
+
+
+        compare_at_difference = (
+
+            new_compare_at
+            - current_compare_at
+
+            if current_compare_at
+            is not None
+
+            else None
+        )
+
 
         candidates.append({
 
@@ -1622,14 +1915,26 @@ def main():
             "old_b2b_price":
                 current_price,
 
+            "new_b2b_price":
+                new_price,
+
+            "price_difference":
+                price_difference,
+
+            "old_compare_at_price":
+                current_compare_at,
+
+            "new_compare_at_price":
+                new_compare_at,
+
+            "compare_at_difference":
+                compare_at_difference,
+
             "old_price_source":
                 current_origin,
 
-            "new_b2b_price":
-                calculated_price,
-
-            "difference":
-                difference,
+            "update_reason":
+                update_reason,
 
             "discount_rule":
                 result[
@@ -1658,19 +1963,40 @@ def main():
                 "",
         })
 
+
+    # =====================================================
+    # SUMMARY BEFORE WRITE
+    # =====================================================
+
     print()
+
     print(
         f"Shopify variants: "
         f"{len(variants):,}"
     )
 
     print(
-        f"Unchanged: "
+        f"Completely unchanged: "
         f"{unchanged:,}"
     )
 
     print(
-        f"Prices to write: "
+        f"Price-only changes: "
+        f"{price_changes:,}"
+    )
+
+    print(
+        f"Compare-at-only changes: "
+        f"{compare_at_changes:,}"
+    )
+
+    print(
+        f"Price + compare-at changes: "
+        f"{both_changes:,}"
+    )
+
+    print(
+        f"Total prices to write: "
         f"{len(candidates):,}"
     )
 
@@ -1681,24 +2007,34 @@ def main():
 
     print()
 
+
+    # =====================================================
+    # WRITE IN BATCHES
+    # =====================================================
+
     successful = 0
 
     failed = 0
 
     total_batches = (
+
         (
             len(candidates)
             + BATCH_SIZE
             - 1
         )
+
         // BATCH_SIZE
     )
 
+
     for batch_number, batch in enumerate(
+
         chunked(
             candidates,
             BATCH_SIZE,
         ),
+
         start=1,
     ):
 
@@ -1722,6 +2058,7 @@ def main():
             )
 
             for row in batch:
+
                 row[
                     "status"
                 ] = "SUCCESS"
@@ -1750,7 +2087,9 @@ def main():
 
                 row[
                     "error"
-                ] = str(exc)
+                ] = str(
+                    exc
+                )
 
             print(
                 f"  ERROR: "
@@ -1758,37 +2097,68 @@ def main():
                 file=sys.stderr,
             )
 
-    # -----------------------------------------------------
+
+    # =====================================================
     # AUDIT CSV
-    # -----------------------------------------------------
+    # =====================================================
 
     audit_path = (
+
         OUTPUT_DIR
         / "b2b_live_update_audit.csv"
     )
 
+
     fields = [
+
         "sku",
+
         "product",
+
         "vendor",
+
         "variant_id",
+
         "retail_price",
+
         "old_b2b_price",
-        "old_price_source",
+
         "new_b2b_price",
-        "difference",
+
+        "price_difference",
+
+        "old_compare_at_price",
+
+        "new_compare_at_price",
+
+        "compare_at_difference",
+
+        "old_price_source",
+
+        "update_reason",
+
         "discount_rule",
+
         "landed_cost",
+
         "margin_floor",
+
         "note",
+
         "status",
+
         "error",
     ]
 
+
     with audit_path.open(
+
         "w",
+
         newline="",
+
         encoding="utf-8-sig",
+
     ) as file:
 
         writer = csv.DictWriter(
@@ -1798,18 +2168,32 @@ def main():
 
         writer.writeheader()
 
+
         for row in candidates:
 
             output = dict(
                 row
             )
 
+
             for key in (
+
                 "retail_price",
+
                 "old_b2b_price",
+
                 "new_b2b_price",
-                "difference",
+
+                "price_difference",
+
+                "old_compare_at_price",
+
+                "new_compare_at_price",
+
+                "compare_at_difference",
+
                 "landed_cost",
+
                 "margin_floor",
             ):
 
@@ -1821,23 +2205,31 @@ def main():
                     ]
                 )
 
+
             writer.writerow(
                 output
             )
 
-    # -----------------------------------------------------
+
+    # =====================================================
     # SKIPPED CSV
-    # -----------------------------------------------------
+    # =====================================================
 
     skipped_path = (
+
         OUTPUT_DIR
         / "b2b_live_skipped.csv"
     )
 
+
     with skipped_path.open(
+
         "w",
+
         newline="",
+
         encoding="utf-8-sig",
+
     ) as file:
 
         writer = csv.DictWriter(
@@ -1855,9 +2247,10 @@ def main():
             skipped
         )
 
-    # -----------------------------------------------------
-    # SUMMARY
-    # -----------------------------------------------------
+
+    # =====================================================
+    # SUMMARY JSON
+    # =====================================================
 
     summary = {
 
@@ -1871,13 +2264,26 @@ def main():
             currency,
 
         "shopify_variants":
-            len(variants),
+            len(
+                variants
+            ),
 
-        "unchanged":
+        "completely_unchanged":
             unchanged,
 
+        "price_only_changes":
+            price_changes,
+
+        "compare_at_only_changes":
+            compare_at_changes,
+
+        "price_and_compare_at_changes":
+            both_changes,
+
         "attempted_updates":
-            len(candidates),
+            len(
+                candidates
+            ),
 
         "successful":
             successful,
@@ -1886,7 +2292,9 @@ def main():
             failed,
 
         "skipped":
-            len(skipped),
+            len(
+                skipped
+            ),
 
         "audit_file":
             str(
@@ -1894,23 +2302,30 @@ def main():
             ),
 
         "mode":
-            "B2B_LIVE",
+            "B2B_LIVE_PRICE_AND_COMPARE_AT",
     }
 
+
     summary_path = (
+
         OUTPUT_DIR
         / "b2b_live_summary.json"
     )
 
+
     summary_path.write_text(
+
         json.dumps(
             summary,
             indent=2,
         ),
+
         encoding="utf-8",
     )
 
+
     print()
+
     print(
         "B2B LIVE UPDATE COMPLETE"
     )
@@ -1922,9 +2337,17 @@ def main():
         )
     )
 
-    if failed:
-        sys.exit(1)
 
+    if failed:
+
+        sys.exit(
+            1
+        )
+
+
+# =========================================================
+# RUN
+# =========================================================
 
 if __name__ == "__main__":
 
@@ -1940,4 +2363,6 @@ if __name__ == "__main__":
             file=sys.stderr,
         )
 
-        sys.exit(1)
+        sys.exit(
+            1
+        )
