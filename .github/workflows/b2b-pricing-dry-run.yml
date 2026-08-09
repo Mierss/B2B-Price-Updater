@@ -1,0 +1,42 @@
+name: B2B Pricing DRY RUN
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: b2b-pricing-dry-run
+  cancel-in-progress: false
+
+jobs:
+  b2b-dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - name: Calculate B2B pricing
+        env:
+          SHOPIFY_STORE: ${{ secrets.SHOPIFY_STORE }}
+          SHOPIFY_CLIENT_ID: ${{ secrets.SHOPIFY_CLIENT_ID }}
+          SHOPIFY_CLIENT_SECRET: ${{ secrets.SHOPIFY_CLIENT_SECRET }}
+          SHOPIFY_API_VERSION: "2026-07"
+        run: python run_b2b_dry_run.py
+
+      - name: Upload B2B audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b2b-pricing-dry-run-audit
+          path: output/
+          if-no-files-found: warn
+          retention-days: 30
