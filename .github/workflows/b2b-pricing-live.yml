@@ -2,6 +2,8 @@ name: B2B Pricing LIVE
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 15 * * *"
 
 permissions:
   contents: read
