@@ -1,0 +1,63 @@
+{
+  "catalog_title": "Wholesale 10%",
+
+  "freight": {
+    "default_per_kg": 8,
+    "holley_direct_per_kg": 10
+  },
+
+  "margin_floors": [
+    {
+      "max_landed_cost": 1500,
+      "margin": 0.25
+    },
+    {
+      "max_landed_cost": null,
+      "margin": 0.20
+    }
+  ],
+
+  "brand_discounts": {
+    "aeroflow": 0.20,
+    "proflow": 0.20,
+    "link ecu": 0.10,
+    "rts": 0.10,
+    "streetpro": 0.10,
+    "fast lane spares": 0.10,
+
+    "omp": 0.05,
+    "bell": 0.05,
+    "franklin performance": 0.05,
+    "pulsar": 0.05,
+    "turbosmart": 0.05,
+    "artec": 0.05,
+    "6boost": 0.05,
+    "cooper cobra": 0.05,
+    "winters performance": 0.05,
+    "kelford cams": 0.05,
+    "hughes race built": 0.05,
+    "drews automotive": 0.05,
+
+    "haltech": 0,
+    "plazmaman": 0
+  },
+
+  "special_rules": {
+    "link_ecu_strada_aim_discount": 0
+  },
+
+  "fallback_discounts": [
+    {
+      "min_retail_price": 10000,
+      "discount": 0.02
+    },
+    {
+      "min_retail_price": 5000,
+      "discount": 0.03
+    },
+    {
+      "min_retail_price": 0,
+      "discount": 0.10
+    }
+  ]
+}
