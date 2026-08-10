@@ -37,6 +37,7 @@
     "kelford cams": 0.05,
     "hughes race built": 0.05,
     "drews automotive": 0.05,
+    "longacre": 0.05,
 
     "haltech": 0,
     "plazmaman": 0
@@ -47,14 +48,6 @@
   },
 
   "fallback_discounts": [
-    {
-      "min_retail_price": 10000,
-      "discount": 0.02
-    },
-    {
-      "min_retail_price": 5000,
-      "discount": 0.03
-    },
     {
       "min_retail_price": 0,
       "discount": 0.10
