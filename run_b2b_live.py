@@ -1193,7 +1193,14 @@ def calculate_b2b_price(
             "reason":
                 "MISSING_SKU",
         }
+        
+    if sku.upper().startswith("FLS-VOUCHER"):
 
+        return {
+            "status": "SKIPPED",
+            "reason": "GIFT_CARD",
+        }
+    
     if (
         retail_price is None
         or retail_price <= 0
