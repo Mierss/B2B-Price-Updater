@@ -294,6 +294,15 @@ LINK_ECU_STRADA_AIM_DISCOUNT = D(
 )
 
 
+EXCLUDED_SKUS = {
+    normalize(sku)
+    for sku in SETTINGS.get(
+        "excluded_skus",
+        [],
+    )
+}
+
+
 FALLBACK_DISCOUNTS = sorted(
 
     SETTINGS[
@@ -987,7 +996,16 @@ def calculate_discount_price(
     retail_price: D,
     vendor: str,
     handle: str,
+    sku: str,
 ):
+
+    if normalize(sku) in EXCLUDED_SKUS:
+
+        return (
+            retail_price,
+            "EXCLUDED SKU",
+            D("0"),
+        )
 
     vendor_key = normalize(
         vendor
@@ -1279,6 +1297,7 @@ def calculate_b2b_price(
         retail_price,
         vendor,
         handle,
+        sku,
     )
 
     tag_keys = {
