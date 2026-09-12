@@ -397,24 +397,39 @@ def graphql(
 
     while True:
 
-        response = requests.post(
-            url,
-            headers={
-                "Content-Type":
-                    "application/json",
+        try:
 
-                "X-Shopify-Access-Token":
-                    token,
-            },
-            json={
-                "query":
-                    query,
+            response = requests.post(
+                url,
+                headers={
+                    "Content-Type":
+                        "application/json",
 
-                "variables":
-                    variables,
-            },
-            timeout=90,
-        )
+                    "X-Shopify-Access-Token":
+                        token,
+                },
+                json={
+                    "query":
+                        query,
+
+                    "variables":
+                        variables,
+                },
+                timeout=90,
+            )
+
+        except requests.RequestException as exc:
+
+            print(
+                f"Shopify connection error: "
+                f"{exc}; retrying in 5s..."
+            )
+
+            time.sleep(
+                5
+            )
+
+            continue
 
         if response.status_code in (
             429,
