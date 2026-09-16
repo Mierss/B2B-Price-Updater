@@ -16,6 +16,19 @@ jobs:
   live-update:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    name: Update ${{ matrix.catalog_title }}
+
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - profile: wholesale-10
+            catalog_title: Wholesale 10%
+            brand_discount_overrides: '{}'
+          - profile: clear-track-25
+            catalog_title: Clear Track 25%
+            brand_discount_overrides: '{"clear track solutions": 0.25}'
 
     steps:
       - uses: actions/checkout@v4
@@ -32,13 +45,15 @@ jobs:
           SHOPIFY_CLIENT_ID: ${{ secrets.SHOPIFY_CLIENT_ID }}
           SHOPIFY_CLIENT_SECRET: ${{ secrets.SHOPIFY_CLIENT_SECRET }}
           SHOPIFY_API_VERSION: "2026-07"
+          B2B_CATALOG_TITLE: ${{ matrix.catalog_title }}
+          B2B_BRAND_DISCOUNT_OVERRIDES: ${{ matrix.brand_discount_overrides }}
         run: python run_b2b_live.py
 
       - name: Upload B2B live audit
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: b2b-pricing-live-audit
+          name: b2b-pricing-live-audit-${{ matrix.profile }}
           path: output/
           if-no-files-found: warn
           retention-days: 30
