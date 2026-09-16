@@ -238,10 +238,20 @@ SETTINGS = load_settings()
 
 
 CATALOG_TITLE = (
-    SETTINGS[
-        "catalog_title"
-    ]
+    os.getenv(
+        "B2B_CATALOG_TITLE",
+        SETTINGS[
+            "catalog_title"
+        ],
+    ).strip()
 )
+
+
+if not CATALOG_TITLE:
+
+    raise RuntimeError(
+        "B2B catalog title cannot be blank"
+    )
 
 
 NORMAL_FREIGHT_PER_KG = D(
@@ -281,6 +291,66 @@ BRAND_DISCOUNTS = {
         "brand_discounts"
     ].items()
 }
+
+
+brand_discount_overrides_raw = (
+    os.getenv(
+        "B2B_BRAND_DISCOUNT_OVERRIDES",
+        "{}",
+    )
+)
+
+
+try:
+
+    brand_discount_overrides = json.loads(
+        brand_discount_overrides_raw
+    )
+
+except json.JSONDecodeError as exc:
+
+    raise RuntimeError(
+        "B2B_BRAND_DISCOUNT_OVERRIDES must be "
+        "a valid JSON object"
+    ) from exc
+
+
+if not isinstance(
+    brand_discount_overrides,
+    dict,
+):
+
+    raise RuntimeError(
+        "B2B_BRAND_DISCOUNT_OVERRIDES must be "
+        "a JSON object"
+    )
+
+
+for brand, discount in (
+    brand_discount_overrides.items()
+):
+
+    discount_decimal = D(
+        str(
+            discount
+        )
+    )
+
+    if (
+        discount_decimal < D("0")
+        or discount_decimal > D("1")
+    ):
+
+        raise RuntimeError(
+            f"Invalid discount for {brand}: "
+            f"{discount}"
+        )
+
+    BRAND_DISCOUNTS[
+        normalize(
+            brand
+        )
+    ] = discount_decimal
 
 
 LINK_ECU_STRADA_AIM_DISCOUNT = D(
