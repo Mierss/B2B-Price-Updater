@@ -1,8 +1,13 @@
 # Fast Lane Spares B2B Pricing Automation
 
-Automates B2B pricing for the Shopify native catalog:
+Automates B2B pricing for these Shopify native catalogs:
 
-`Wholesale 10%`
+* `Wholesale 10%`
+* `Clear Track 25%`
+
+`Clear Track 25%` uses the same pricing rules as `Wholesale 10%`, with
+a 25% vendor discount override for Clear Track Solutions. The original
+`Wholesale 10%` pricing rules remain unchanged.
 
 The current version is **read-only / dry-run only**.
 
